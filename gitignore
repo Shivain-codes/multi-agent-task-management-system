@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+*.egg-info/
+
+# Virtual environments
+.venv/
+.venv39/
+venv/
+venv39/
+
+# Environment and secrets
+.env
+credentials/
+*.pem
+*.key
+
+# OS/editor
+.DS_Store
+.vscode/
+
+# Build and distribution
+build/
+dist/

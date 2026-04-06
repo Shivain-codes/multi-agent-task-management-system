@@ -1,0 +1,171 @@
+from typing import Optional, Dict, Any
+from googleapiclient.discovery import build
+from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
+import os
+from app.core.config import get_settings
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+settings = get_settings()
+
+SCOPES = [
+    "https://www.googleapis.com/auth/documents",
+    "https://www.googleapis.com/auth/drive.file",
+]
+
+
+def _get_docs_service():
+    """Build Google Docs service using saved OAuth credentials."""
+    if settings.google_service_account_path and os.path.exists(settings.google_service_account_path):
+        creds = service_account.Credentials.from_service_account_file(
+            settings.google_service_account_path,
+            scopes=SCOPES,
+        )
+        return build("docs", "v1", credentials=creds)
+
+    token_path = "credentials/google_token.json"
+    if not os.path.exists(token_path):
+        raise RuntimeError("Google credentials not found. Run OAuth flow first.")
+    creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+    return build("docs", "v1", credentials=creds)
+
+
+def _get_drive_service():
+    if settings.google_service_account_path and os.path.exists(settings.google_service_account_path):
+        creds = service_account.Credentials.from_service_account_file(
+            settings.google_service_account_path,
+            scopes=SCOPES,
+        )
+        return build("drive", "v3", credentials=creds)
+
+    token_path = "credentials/google_token.json"
+    if not os.path.exists(token_path):
+        raise RuntimeError("Google credentials not found.")
+    creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+    return build("drive", "v3", credentials=creds)
+
+
+async def create_google_doc(
+    title: str,
+    content: str,
+    folder_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Create a Google Doc with the given title and content.
+
+    Args:
+        title: Document title
+        content: Plain text content to insert
+        folder_id: Optional Drive folder ID to place the doc in
+
+    Returns:
+        dict with document_id, url, and title
+    """
+    try:
+        docs_service = _get_docs_service()
+
+        # Create empty document
+        doc = docs_service.documents().create(body={"title": title}).execute()
+        doc_id = doc["documentId"]
+
+        # Insert content
+        requests = [
+            {
+                "insertText": {
+                    "location": {"index": 1},
+                    "text": content,
+                }
+            }
+        ]
+        docs_service.documents().batchUpdate(
+            documentId=doc_id, body={"requests": requests}
+        ).execute()
+
+        # Move to folder if specified
+        if folder_id:
+            drive_service = _get_drive_service()
+            drive_service.files().update(
+                fileId=doc_id,
+                addParents=folder_id,
+                removeParents="root",
+                fields="id, parents",
+            ).execute()
+
+        doc_url = f"https://docs.google.com/document/d/{doc_id}/edit"
+        logger.info("google_doc_created", doc_id=doc_id, title=title)
+
+        return {
+            "success": True,
+            "document_id": doc_id,
+            "url": doc_url,
+            "title": title,
+        }
+    except Exception as e:
+        logger.error("google_doc_creation_failed", error=str(e))
+        return {"success": False, "error": str(e)}
+
+
+async def generate_product_brief(
+    product_name: str,
+    launch_date: str,
+    key_features: list,
+    target_audience: str,
+    team_channel: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Generate a structured product launch brief document.
+
+    Args:
+        product_name: Name of the product being launched
+        launch_date: Launch date string
+        key_features: List of key feature strings
+        target_audience: Target audience description
+        team_channel: Slack channel to mention in the brief
+
+    Returns:
+        dict with document_id, url, and content preview
+    """
+    features_text = "\n".join(f"• {f}" for f in key_features)
+    channel_note = f"\nTeam channel: {team_channel}" if team_channel else ""
+
+    content = f"""PRODUCT LAUNCH BRIEF
+{'='*50}
+
+Product: {product_name}
+Launch Date: {launch_date}
+Target Audience: {target_audience}{channel_note}
+
+KEY FEATURES
+{'─'*30}
+{features_text}
+
+LAUNCH CHECKLIST
+{'─'*30}
+• Marketing materials finalized
+• Engineering sign-off complete
+• Customer support briefed
+• Press kit prepared
+• Analytics tracking configured
+• Rollback plan documented
+
+COMMUNICATION PLAN
+{'─'*30}
+• Internal announcement: 48 hours before launch
+• Press release: Launch day
+• Customer email: Launch day
+• Social media posts: Scheduled
+
+RISKS AND MITIGATIONS
+{'─'*30}
+• Risk: Server load spike — Mitigation: Auto-scaling configured
+• Risk: Critical bug found — Mitigation: Rollback procedure ready
+• Risk: Low adoption — Mitigation: Beta user feedback incorporated
+
+Generated by Nexus AI System
+"""
+
+    return await create_google_doc(
+        title=f"Product Launch Brief — {product_name} ({launch_date})",
+        content=content,
+    )

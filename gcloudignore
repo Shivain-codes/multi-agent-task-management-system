@@ -1,0 +1,28 @@
+# Exclude local artifacts and secrets from gcloud builds submit
+.gcloudignore
+.git/
+.gitignore
+
+# Python caches and environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.venv39/
+venv/
+venv39/
+
+# Secrets and local env
+.env
+credentials/
+*.pem
+*.key
+
+# OS/editor
+.DS_Store
+.vscode/
+
+# Non-source extras
+docs/
+tests/
+{app/
