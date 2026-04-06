@@ -31,7 +31,7 @@ User Request (natural language)
        │          │          │             │
        └──────────┴──────────┴─────────────┘
                              │
-                    AlloyDB (PostgreSQL + pgvector)
+                    Cloud SQL (PostgreSQL + pgvector)
                     tasks · schedules · notes · traces
 ```
 
