@@ -1,7 +1,7 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 from typing import List
-from urllib.parse import quote_plus, quote
+from urllib.parse import quote_plus
 
 
 class Settings(BaseSettings):
@@ -50,19 +50,19 @@ class Settings(BaseSettings):
     @property
     def database_url(self) -> str:
         user = quote_plus(self.db_user)
-    password = quote_plus(self.db_password)
-    db_name = self.db_name  # no encoding needed here
-    
-    if self.cloudsql_instance_connection_name:
-        # DO NOT encode the socket path — asyncpg needs it raw
-        socket_path = f"{self.db_socket_dir}/{self.cloudsql_instance_connection_name}"
-        return f"postgresql+asyncpg://{user}:{password}@/{db_name}?host={socket_path}"
-    
-    return (
-        f"postgresql+asyncpg://{user}:{password}"
-        f"@{self.db_host}:{self.db_port}/{db_name}"
-    )
-        
+        password = quote_plus(self.db_password)
+        db_name = self.db_name
+
+        if self.cloudsql_instance_connection_name:
+            # DO NOT encode the socket path — asyncpg needs it raw
+            socket_path = f"{self.db_socket_dir}/{self.cloudsql_instance_connection_name}"
+            return f"postgresql+asyncpg://{user}:{password}@/{db_name}?host={socket_path}"
+
+        return (
+            f"postgresql+asyncpg://{user}:{password}"
+            f"@{self.db_host}:{self.db_port}/{db_name}"
+        )
+
     @property
     def cors_origins_list(self) -> List[str]:
         return [o.strip() for o in self.cors_origins.split(",")]
