@@ -1,11 +1,4 @@
-#!/bin/bash
-# ─────────────────────────────────────────────────────────────────────────────
-# Nexus AI — Cloud Run Deployment Script
-# Usage: chmod +x scripts/deploy.sh && ./scripts/deploy.sh
-# ─────────────────────────────────────────────────────────────────────────────
 set -e
-
-# ── Config (edit these) ───────────────────────────────────────────────────────
 PROJECT_ID="${GCP_PROJECT_ID:-your-project-id}"
 REGION="${GCP_REGION:-us-central1}"
 SERVICE_NAME="nexus-ai"
@@ -18,14 +11,11 @@ echo "   Region:  ${REGION}"
 echo "   Image:   ${IMAGE_NAME}"
 echo ""
 
-# ── Authenticate ──────────────────────────────────────────────────────────────
 gcloud config set project "${PROJECT_ID}"
 
-# ── Build and push container ──────────────────────────────────────────────────
 echo "📦 Building container..."
 gcloud builds submit --tag "${IMAGE_NAME}:latest" .
 
-# ── Deploy to Cloud Run ───────────────────────────────────────────────────────
 echo "☁️  Deploying to Cloud Run..."
 gcloud run deploy "${SERVICE_NAME}" \
     --image "${IMAGE_NAME}:latest" \
@@ -51,13 +41,12 @@ gcloud run deploy "${SERVICE_NAME}" \
     --set-secrets "GOOGLE_CLIENT_ID=nexus-google-client-id:latest" \
     --set-secrets "GOOGLE_CLIENT_SECRET=nexus-google-client-secret:latest"
 
-# ── Print service URL ─────────────────────────────────────────────────────────
 SERVICE_URL=$(gcloud run services describe "${SERVICE_NAME}" \
     --region "${REGION}" \
     --format "value(status.url)")
 
 echo ""
-echo "✅ Deployment complete!"
+echo " Deployment complete!"
 echo "   Service URL: ${SERVICE_URL}"
 echo "   Health:      ${SERVICE_URL}/health"
 echo "   API Docs:    ${SERVICE_URL}/docs"
