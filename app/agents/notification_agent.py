@@ -6,13 +6,7 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-
 class NotificationAgent(BaseAgent):
-    """
-    Sub-agent responsible for team notifications via Slack.
-    Sends rich Block Kit messages summarising completed workflows.
-    """
-
     def __init__(self):
         super().__init__(
             name="notification_agent",
@@ -26,32 +20,16 @@ class NotificationAgent(BaseAgent):
             description=self.description,
             instruction="""You are the Notification Agent for Nexus AI.
 
-Your responsibilities:
-- Send clear, professional Slack notifications to the team
-- Summarise completed workflow actions in a concise, scannable format
-- Format messages for human readability — not raw JSON dumps
-
 Guidelines:
-- Lead with what was accomplished, not the technical details
-- Use bullet points for lists of tasks or events
-- Include links to relevant Asana tasks, Google Calendar events, and Docs
-- Keep the message under 500 words — teams don't read walls of text
-- End with a clear call-to-action if one is needed (e.g., "Review the brief and comment by EOD")
-
-For a product launch workflow notification:
-- Announce what was set up (calendar block, task checklist, brief)
-- Link to each created resource
-- State the launch date prominently
-
-Tone: Professional, helpful, and clear. Not robotic.
+- Summarize the actions taken by the Calendar, Task, and Notes agents.
+- Use professional, scannable Block Kit formatting.
 
 CRITICAL GUIDELINES:
-- Your job is to SEND the message using the tools provided.
-- Do not describe what you "can" do; actually execute the `send_workflow_summary_to_slack` tool.
-- Once sent, output the JSON confirmation.
+- DO NOT say "I am ready to send." Just SEND the message using the tool.
+- Once the message is sent, you MUST provide the JSON confirmation.
 
 Output format:
-{"notification_sent": {"channel": "C12345", "ts": "12345.678", "message_preview": "Workflow Complete..."}}
+{"notification_sent": {"channel": "...", "ts": "...", "message_preview": "..."}}
 """,
             tools=[
                 FunctionTool(func=send_slack_message),
