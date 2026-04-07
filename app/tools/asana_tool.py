@@ -23,24 +23,17 @@ async def create_asana_task(
     assignee: Optional[str] = None,
     project_gid: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Create a task in Asana.
-
-    Args:
-        title: Task name
-        description: Task notes/description
-        due_date: Due date string 'YYYY-MM-DD'
-        priority: 'low', 'medium', 'high', 'urgent'
-        tags: List of tag names
-        assignee: Assignee email or GID
-        project_gid: Override default project GID
-
-    Returns:
-        dict with task_gid, permalink_url, and status
-    """
     try:
         client = _get_asana_client()
         tasks_api = asana.TasksApi(client)
+
+        notes_parts = []
+        if description:
+            notes_parts.append(description)
+        if priority:
+            notes_parts.append(f"Priority: {priority}")
+        if tags:
+            notes_parts.append("Tags: " + ", ".join(tags))
 
         body = {
             "data": {
@@ -49,8 +42,9 @@ async def create_asana_task(
                 "projects": [project_gid or settings.asana_default_project_gid],
             }
         }
-        if description:
-            body["data"]["notes"] = description
+
+        if notes_parts:
+            body["data"]["notes"] = "\n\n".join(notes_parts)
         if due_date:
             body["data"]["due_on"] = due_date
         if assignee:
@@ -64,6 +58,9 @@ async def create_asana_task(
             "task_gid": task["gid"],
             "permalink_url": task.get("permalink_url", ""),
             "title": title,
+            "due_date": due_date,
+            "priority": priority,
+            "tags": tags or [],
         }
     except ApiException as e:
         logger.error("asana_task_creation_failed", error=str(e))
@@ -77,16 +74,6 @@ async def create_asana_task_batch(
     tasks: List[Dict[str, Any]],
     project_gid: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Create multiple Asana tasks at once (e.g. a full checklist).
-
-    Args:
-        tasks: List of task dicts, each with keys: title, description, due_date, priority
-        project_gid: Target project GID
-
-    Returns:
-        dict with list of created tasks and success count
-    """
     created = []
     failed = []
 
@@ -96,6 +83,8 @@ async def create_asana_task_batch(
             description=task_data.get("description"),
             due_date=task_data.get("due_date"),
             priority=task_data.get("priority", "medium"),
+            tags=task_data.get("tags"),
+            assignee=task_data.get("assignee"),
             project_gid=project_gid,
         )
         if result["success"]:
@@ -116,16 +105,6 @@ async def list_asana_tasks(
     project_gid: Optional[str] = None,
     completed: bool = False,
 ) -> Dict[str, Any]:
-    """
-    List tasks in an Asana project.
-
-    Args:
-        project_gid: Project GID (uses default if not provided)
-        completed: Include completed tasks
-
-    Returns:
-        dict with list of tasks
-    """
     try:
         client = _get_asana_client()
         tasks_api = asana.TasksApi(client)
