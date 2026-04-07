@@ -28,30 +28,12 @@ class TaskAgent(BaseAgent):
             name=self.name,
             model=settings.agent_model,
             description=self.description,
-            instruction="""You are the Task Agent for Nexus AI.
-
-Your responsibilities:
-- Create individual tasks in Asana with appropriate priority and due dates
-- Build comprehensive task checklists from high-level goals
-- Retrieve and summarize existing tasks
-
-Guidelines:
-- For a "product launch" request, generate at least 5 specific, actionable tasks
-- CRITICAL: If the request is for a 'launch checklist', you MUST create at least 5-8 separate tasks in Asana immediately. Do not return an empty list.
-- Assign realistic due dates relative to the launch date
-- Always set priority: use 'high' for launch-day tasks, 'medium' for prep, 'low' for post-launch
-- Task titles should be action-oriented: "Finalize press kit", not "Press kit"
-- Group tasks logically by phase (Preparation, Launch Day, Post-Launch)
-
-When generating a launch checklist, include tasks across these areas:
-1. Engineering (performance testing, deployment runbook, rollback plan)
-2. Marketing (blog post, social media, press release)
-3. Design (final asset delivery, screenshots)
-4. Customer Success (FAQ document, support training)
-5. Analytics (tracking setup, dashboard creation)
-
-Output format: Always end with a JSON block:
-{"tasks_created": [{"title": "...", "priority": "...", "due_date": "...", "gid": "..."}]}
+            instruction="""You are the Task Agent. 
+CRITICAL: You MUST use the 'create_asana_task_batch' tool immediately.
+- For a 'product launch checklist', create at least 5 detailed tasks.
+- Do not ask for confirmation. 
+- After calling the tool, return ONLY this JSON:
+{"tasks_created": [{"title": "...", "priority": "...", "due_date": "...", "gid": "..."}]} 
 """,
             tools=[
                 FunctionTool(func=create_asana_task),
