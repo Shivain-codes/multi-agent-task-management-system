@@ -168,29 +168,88 @@ class OrchestratorAgent:
         if not response:
             return f"{agent_name} completed with no output"
 
-        # Try to find JSON block and extract key info
-        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}', response, re.DOTALL)
-        if json_match:
-            try:
-                data = json.loads(json_match.group())
-                if "created_event" in data:
-                    e = data["created_event"]
-                    return f"Created event '{e.get('title', 'Event')}' at {e.get('start', '')}"
-                if "tasks_created" in data:
-                    tasks = data.get("tasks_created", [])
+        data = self._extract_first_json_object(response)
+        if isinstance(data, dict):
+            if "created_event" in data:
+                e = data.get("created_event") or {}
+                if isinstance(e, dict):
+                    title = e.get("title") or e.get("summary") or "Event"
+                    start = e.get("start") or e.get("start_time") or e.get("start_datetime") or ""
+                    return f"Created event '{title}' at {start}".strip()
+                return "Created calendar event"
+
+            if "tasks_created" in data:
+                tasks = data.get("tasks_created", [])
+                if isinstance(tasks, list):
                     return f"Created {len(tasks)} tasks in Asana"
-                if "document_created" in data:
-                    d = data["document_created"]
+                return "Created tasks in Asana"
+
+            if "document_created" in data:
+                d = data.get("document_created") or {}
+                if isinstance(d, dict):
                     return f"Created doc '{d.get('title', 'Document')}'"
-                if "notification_sent" in data:
-                    n = data["notification_sent"]
+                return "Created document"
+
+            if "notification_sent" in data:
+                n = data.get("notification_sent") or {}
+                if isinstance(n, dict):
                     return f"Notified {n.get('channel', 'team')} on Slack"
-            except json.JSONDecodeError:
-                pass
+                return "Sent Slack notification"
 
         # Fallback: first 120 chars of response
         lines = [l.strip() for l in response.split("\n") if l.strip()]
         return lines[0][:120] if lines else f"{agent_name} completed"
+
+    def _extract_first_json_object(self, text: str) -> Optional[Dict[str, Any]]:
+        """Extract the first valid JSON object from free-form model output."""
+        # Prefer fenced JSON blocks when available.
+        fenced_blocks = re.findall(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.DOTALL | re.IGNORECASE)
+        for block in fenced_blocks:
+            try:
+                parsed = json.loads(block)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                continue
+
+        start = text.find("{")
+        while start != -1:
+            depth = 0
+            in_string = False
+            escaped = False
+
+            for i in range(start, len(text)):
+                ch = text[i]
+
+                if in_string:
+                    if escaped:
+                        escaped = False
+                    elif ch == "\\":
+                        escaped = True
+                    elif ch == '"':
+                        in_string = False
+                    continue
+
+                if ch == '"':
+                    in_string = True
+                    continue
+
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        candidate = text[start:i + 1]
+                        try:
+                            parsed = json.loads(candidate)
+                            if isinstance(parsed, dict):
+                                return parsed
+                        except json.JSONDecodeError:
+                            break
+
+            start = text.find("{", start + 1)
+
+        return None
 
     async def run(
         self,
