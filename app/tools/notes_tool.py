@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google.oauth2 import service_account
@@ -17,7 +17,7 @@ SCOPES = [
 
 def _get_docs_service():
     """Build Google Docs service using saved OAuth credentials."""
-    if settings.google_service_account_path and os.path.exists(settings.google_service_account_path):
+    if getattr(settings, 'google_service_account_path', None) and os.path.exists(settings.google_service_account_path):
         creds = service_account.Credentials.from_service_account_file(
             settings.google_service_account_path,
             scopes=SCOPES,
@@ -109,7 +109,7 @@ async def create_google_doc(
 async def generate_product_brief(
     product_name: str,
     launch_date: str,
-    key_features: list,
+    key_features: list[str],
     target_audience: str,
     team_channel: Optional[str] = None,
 ) -> Dict[str, Any]:
