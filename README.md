@@ -1,7 +1,7 @@
 # Nexus AI — Multi-Agent AI System
 
 > **Google Gen AI Academy Hackathon submission**
-> Built on Google ADK · Gemini 1.5 Flash · Cloud SQL · Cloud Run
+> Built on Google ADK · Gemini 2.5 Flash · Cloud SQL · Cloud Run
 
 ---
 
