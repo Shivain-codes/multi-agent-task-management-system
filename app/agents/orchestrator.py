@@ -6,13 +6,6 @@ from datetime import datetime
 import json
 import re
 
-from google.adk.agents import LlmAgent
-from google.adk.tools import FunctionTool
-from google.adk.sessions import InMemorySessionService
-from google.adk.runners import Runner
-from google.genai.types import Content, Part
-
-from app.agents.base_agent import APP_NAME
 from app.agents.calendar_agent import CalendarAgent
 from app.agents.task_agent import TaskAgent
 from app.agents.notes_agent import NotesAgent
@@ -24,75 +17,76 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 
-# ── Planner tool (called by the orchestrator LLM internally) ─────────────────
-
 async def decompose_workflow(user_request: str) -> Dict[str, Any]:
     """
     Analyse the user request and decompose it into a structured execution plan.
-
-    Args:
-        user_request: The natural language request from the user
-
-    Returns:
-        A plan dict with agents_needed and per-agent instructions
     """
     request_lower = user_request.lower()
 
-    agents_needed = []
-    agent_instructions = {}
+    agents_needed: List[str] = []
+    agent_instructions: Dict[str, str] = {}
 
-    # Intent detection — determines which agents fire
+    # Narrower intent detection
     needs_calendar = any(k in request_lower for k in [
-        "calendar", "schedule", "block", "meeting", "event", "time", "day", "date"
-    ])
-    needs_tasks = any(k in request_lower for k in [
-        "task", "checklist", "todo", "list", "action", "prepare", "create"
-    ])
-    needs_notes = any(k in request_lower for k in [
-        "brief", "doc", "note", "write", "draft", "summary", "plan", "report"
-    ])
-    needs_notification = any(k in request_lower for k in [
-        "notify", "slack", "team", "announce", "send", "message", "notify"
+        "calendar", "schedule", "block my calendar", "meeting", "event", "availability"
     ])
 
-    # For complex requests like product launch, activate all agents
-    is_complex = any(k in request_lower for k in [
-        "launch", "project", "sprint", "campaign", "release", "event"
+    needs_tasks = any(k in request_lower for k in [
+        "task", "checklist", "todo", "to-do", "action items", "asana"
     ])
-    if is_complex:
-        needs_calendar = needs_tasks = needs_notes = needs_notification = True
+
+    needs_notes = any(k in request_lower for k in [
+        "brief", "doc", "document", "note", "write", "draft", "summary", "report"
+    ])
+
+    needs_notification = any(k in request_lower for k in [
+        "notify", "notification", "slack", "announce", "send message", "message the team"
+    ])
+
+    # Only treat as complex when the request explicitly asks for multiple workflow actions
+    multi_action_markers = sum([
+        needs_calendar,
+        needs_tasks,
+        needs_notes,
+        needs_notification,
+    ])
+    explicitly_complex = any(k in request_lower for k in [
+        "block my calendar",
+        "write a brief",
+        "notify the team",
+        "send to slack",
+        "create a document",
+    ])
+    is_complex = multi_action_markers >= 2 or explicitly_complex
 
     if needs_calendar:
         agents_needed.append("calendar_agent")
         agent_instructions["calendar_agent"] = (
-            f"Based on this user request: '{user_request}' — "
-            "identify the date/time mentioned, check availability, and create the appropriate calendar event(s). "
-            "Use ISO datetime format. If a full day block is needed, use 9:00 AM to 6:00 PM."
+            f"User request: '{user_request}'. "
+            "Check availability if needed and create the relevant calendar event only if the request explicitly asks for scheduling or blocking time. "
+            "Use ISO datetime format. If a full day block is needed, use 09:00 to 18:00."
         )
 
     if needs_tasks:
         agents_needed.append("task_agent")
         agent_instructions["task_agent"] = (
-            f"Based on this user request: '{user_request}' — "
-            "generate a comprehensive, actionable task checklist. "
-            "Create tasks in Asana with appropriate priorities and due dates. "
-            "For a launch, create at least 8 tasks across engineering, marketing, and ops."
+            f"User request: '{user_request}'. "
+            "Create the requested task or checklist in Asana. "
+            "If it is a launch checklist, create at least 8 actionable tasks across engineering, marketing, operations, QA, and communication."
         )
 
     if needs_notes:
         agents_needed.append("notes_agent")
         agent_instructions["notes_agent"] = (
-            f"Based on this user request: '{user_request}' — "
-            "create a professional document (brief, plan, or summary) in Google Docs. "
-            "Make it comprehensive and ready to share with the team."
+            f"User request: '{user_request}'. "
+            "Create a professional document only if the request explicitly asks for a brief, document, notes, or summary."
         )
 
     if needs_notification:
         agents_needed.append("notification_agent")
         agent_instructions["notification_agent"] = (
-            f"After other agents complete, send a team Slack notification summarising "
-            f"all actions taken for: '{user_request}'. "
-            "Include links to created resources. Keep it professional and scannable."
+            f"User request: '{user_request}'. "
+            "After other agents complete, send a team Slack notification summarising actions taken."
         )
 
     return {
@@ -100,28 +94,17 @@ async def decompose_workflow(user_request: str) -> Dict[str, Any]:
         "agent_instructions": agent_instructions,
         "parallel_agents": [a for a in agents_needed if a != "notification_agent"],
         "sequential_agents": ["notification_agent"] if needs_notification else [],
-        "complexity": "high" if is_complex else "medium",
+        "complexity": "high" if is_complex else "low",
     }
 
-
-# ── Orchestrator ──────────────────────────────────────────────────────────────
 
 class OrchestratorAgent:
     """
     Primary coordinating agent for Nexus AI.
-
-    Workflow:
-    1. Receives user natural language request
-    2. Calls decompose_workflow() to build an execution plan
-    3. Runs parallel agents (calendar, task, notes) concurrently via asyncio.gather
-    4. Runs sequential agents (notification) after parallel phase completes
-    5. Aggregates all results and returns a unified response
-    6. Persists the full workflow trace to AlloyDB
     """
 
     def __init__(self):
         self.name = "orchestrator"
-        # Instantiate sub-agents once — they cache their LlmAgent internally
         self._sub_agents: Dict[str, Any] = {
             "calendar_agent": CalendarAgent(),
             "task_agent": TaskAgent(),
@@ -147,12 +130,7 @@ class OrchestratorAgent:
                 "summary": "Agent not found",
             }
 
-        # IMPORTANT:
-        # Give every sub-agent invocation its own isolated ADK session.
-        # Reusing the same session across parallel tool-calling agents causes
-        # model/functionCall/functionResponse turns to mix together.
         sub_session_id = f"{session_id}:{agent_name}:{uuid.uuid4().hex}"
-
         start = time.monotonic()
 
         safe_context = {
@@ -185,7 +163,8 @@ class OrchestratorAgent:
             }
 
         duration_ms = int((time.monotonic() - start) * 1000)
-        summary = self._extract_summary(result.get("response", ""), agent_name)
+        response_text = result.get("response") or result.get("message") or ""
+        summary = self._extract_summary(response_text, agent_name)
 
         return {
             **result,
@@ -203,12 +182,13 @@ class OrchestratorAgent:
         data = self._extract_first_json_object(response)
         if isinstance(data, dict):
             if "created_event" in data:
-                e = data.get("created_event") or {}
+                e = data.get("created_event")
                 if isinstance(e, dict):
                     title = e.get("title") or e.get("summary") or "Event"
                     start = e.get("start") or e.get("start_time") or e.get("start_datetime") or ""
                     return f"Created event '{title}' at {start}".strip()
-                return "Created calendar event"
+                if e is None:
+                    return "No calendar action taken"
 
             if "tasks_created" in data:
                 tasks = data.get("tasks_created", [])
@@ -216,25 +196,52 @@ class OrchestratorAgent:
                     return f"Created {len(tasks)} tasks in Asana"
                 return "Created tasks in Asana"
 
+            # Support direct tool return shape from create_asana_task_batch
+            if "tasks" in data and isinstance(data.get("tasks"), list):
+                return f"Created {len(data['tasks'])} tasks in Asana"
+
             if "document_created" in data:
-                d = data.get("document_created") or {}
+                d = data.get("document_created")
                 if isinstance(d, dict):
-                    return f"Created doc '{d.get('title', 'Document')}'"
-                return "Created document"
+                    title = d.get("title", "Document")
+                    return f"Created doc '{title}'"
+                if d is None:
+                    return "No document created"
+
+            # Support direct tool return shape from create_google_doc
+            if "document_id" in data or "url" in data:
+                return f"Created doc '{data.get('title', 'Document')}'"
 
             if "notification_sent" in data:
-                n = data.get("notification_sent") or {}
+                n = data.get("notification_sent")
                 if isinstance(n, dict):
                     return f"Notified {n.get('channel', 'team')} on Slack"
-                return "Sent Slack notification"
+                if n is None:
+                    return "No Slack notification sent"
 
-        # Fallback: first 120 chars of response
+            # Support direct tool return shape from send_slack_message / send_workflow_summary_to_slack
+            if "ts" in data and "channel" in data:
+                return f"Notified {data.get('channel', 'team')} on Slack"
+
+            if data.get("success") is True:
+                if agent_name == "task_agent":
+                    if "created_count" in data:
+                        return f"Created {data.get('created_count', 0)} tasks in Asana"
+                    return "Task agent completed successfully"
+                if agent_name == "notes_agent":
+                    return f"Created doc '{data.get('title', 'Document')}'"
+                if agent_name == "calendar_agent":
+                    title = data.get("title", "Event")
+                    start = data.get("start_time", "")
+                    return f"Created event '{title}' at {start}".strip()
+                if agent_name == "notification_agent":
+                    return f"Notified {data.get('channel', 'team')} on Slack"
+
         lines = [l.strip() for l in response.split("\n") if l.strip()]
         return lines[0][:120] if lines else f"{agent_name} completed"
 
     def _extract_first_json_object(self, text: str) -> Optional[Dict[str, Any]]:
         """Extract the first valid JSON object from free-form model output."""
-        # Prefer fenced JSON blocks when available.
         fenced_blocks = re.findall(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.DOTALL | re.IGNORECASE)
         for block in fenced_blocks:
             try:
@@ -289,24 +296,12 @@ class OrchestratorAgent:
         session_id: Optional[str] = None,
         db_session=None,
     ) -> Dict[str, Any]:
-        """
-        Main entry point. Executes the full multi-agent workflow.
-
-        Args:
-            user_request: Natural language request from the user
-            session_id: Optional session ID for continuity
-            db_session: Optional AsyncSession for persisting the workflow trace
-
-        Returns:
-            Comprehensive workflow result dict
-        """
         workflow_id = str(uuid.uuid4())
         sid = session_id or uuid.uuid4().hex
         start_time = time.monotonic()
 
         logger.info("workflow_started", workflow_id=workflow_id, request=user_request[:100])
 
-        # ── Step 1: Persist initial trace ────────────────────────────────────
         trace = None
         if db_session:
             from app.db.models import WorkflowTrace, WorkflowStatus
@@ -319,7 +314,6 @@ class OrchestratorAgent:
             db_session.add(trace)
             await db_session.flush()
 
-        # ── Step 2: Decompose into plan ───────────────────────────────────────
         plan = await decompose_workflow(user_request)
         logger.info("workflow_plan", workflow_id=workflow_id, plan=plan)
 
@@ -327,7 +321,6 @@ class OrchestratorAgent:
             trace.plan = plan
             await db_session.flush()
 
-        # ── Step 3: Run parallel agents with isolated sessions ───────────────
         parallel_agents = plan.get("parallel_agents", [])
         parallel_tasks = []
 
@@ -358,7 +351,6 @@ class OrchestratorAgent:
         if parallel_tasks:
             parallel_results = await asyncio.gather(*parallel_tasks, return_exceptions=False)
 
-        # ── Step 4: Run sequential agents after parallel phase ───────────────
         sequential_results: List[Dict[str, Any]] = []
 
         for agent_name in plan.get("sequential_agents", []):
@@ -396,14 +388,12 @@ class OrchestratorAgent:
             )
             sequential_results.append(result)
 
-        # ── Step 5: Aggregate ─────────────────────────────────────────────────
         all_results = parallel_results + sequential_results
         total_duration_ms = int((time.monotonic() - start_time) * 1000)
         has_failures = any(not r.get("success") for r in all_results)
 
         agent_results = {r["agent_name"]: r for r in all_results}
 
-        # Build step-by-step trace for the /trace endpoint
         steps = [
             {
                 "step": i + 1,
@@ -429,7 +419,6 @@ class OrchestratorAgent:
             "summary": self._build_workflow_summary(user_request, all_results),
         }
 
-        # ── Step 6: Update trace in DB ────────────────────────────────────────
         if trace and db_session:
             from app.db.models import WorkflowStatus
             trace.status = (
@@ -455,7 +444,6 @@ class OrchestratorAgent:
     def _build_workflow_summary(
         self, user_request: str, results: List[Dict[str, Any]]
     ) -> str:
-        """Build a human-readable summary of the entire workflow."""
         successful = [r for r in results if r.get("success")]
         failed = [r for r in results if not r.get("success")]
 
