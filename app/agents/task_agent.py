@@ -4,7 +4,6 @@ from app.agents.base_agent import BaseAgent
 from app.tools.asana_tool import (
     create_asana_task,
     create_asana_task_batch,
-    create_product_launch_checklist,
     list_asana_tasks,
 )
 from app.core.config import get_settings
@@ -37,16 +36,27 @@ Rules:
 2. DO NOT ask clarifying questions.
 3. DO NOT explain your reasoning.
 4. Perform the task immediately using Asana tools.
-5. If the request mentions "product launch checklist", "launch checklist", or similar,
-   you MUST call create_product_launch_checklist.
-6. Use create_asana_task only for a true single-task request.
-7. Use create_asana_task_batch only when you already have a complete non-empty tasks list.
-8. After the tool call, output ONLY a valid JSON object.
+5. If the request contains 'checklist', 'launch checklist', 'todo', or 'multiple tasks',
+   call create_asana_task_batch with EXACTLY 8 task objects for a product launch checklist.
+6. Never call create_asana_task_batch with an empty list.
+7. If the request is for only one task, call create_asana_task.
+8. After using the tool, output ONLY valid JSON.
 
-Examples:
-- "Create a task called product launch checklist" -> use create_product_launch_checklist
-- "Create a launch checklist" -> use create_product_launch_checklist
-- "Create one task called Follow up with vendor" -> use create_asana_task
+For a product launch checklist, create these 8 tasks:
+- Finalize launch plan
+- Confirm feature readiness
+- Run QA and bug bash
+- Prepare launch assets
+- Review analytics and tracking
+- Brief support team
+- Schedule launch-day monitoring
+- Publish launch announcement
+
+Each task object for create_asana_task_batch must use:
+- title
+- description
+- priority
+- due_date
 
 Output format:
 {
@@ -55,11 +65,16 @@ Output format:
   ],
   "status": "created"
 }
+
+If nothing was created:
+{
+  "tasks_created": [],
+  "status": "no_action"
+}
 """,
             tools=[
                 FunctionTool(func=create_asana_task),
                 FunctionTool(func=create_asana_task_batch),
-                FunctionTool(func=create_product_launch_checklist),
                 FunctionTool(func=list_asana_tasks),
             ],
         )
