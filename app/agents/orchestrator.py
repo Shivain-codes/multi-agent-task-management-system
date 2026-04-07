@@ -312,27 +312,26 @@ class OrchestratorAgent:
         if parallel_tasks:
             parallel_results = await asyncio.gather(*parallel_tasks, return_exceptions=False)
 
-        # ── Step 4: Run sequential agents (notification waits for parallel) ───
+        # ── Step 4: Run sequential agents ───
         sequential_results: List[Dict[str, Any]] = []
         for agent_name in plan.get("sequential_agents", []):
             if agent_name not in plan["agent_instructions"]:
                 continue
 
-            # Inject parallel results summary into notification context
+            # Create a clean instruction string with the data included
             parallel_summary = "\n".join(
-                f"- {r.get('agent_name', 'agent')}: {r.get('summary', '')}"
-                for r in parallel_results
+                [f"- {r['agent_name']}: {r.get('summary')}" for r in parallel_results]
             )
-            context = {
-                "workflow_id": workflow_id,
-                "user_request": user_request,
-                "completed_actions": parallel_summary,
-            }
+            task_instruction = (
+                f"The following actions were completed: {parallel_summary}. "
+                "Please notify the team now."
+            )
+
             result = await self._run_sub_agent(
                 agent_name=agent_name,
-                instruction=plan["agent_instructions"][agent_name],
+                instruction=task_instruction,
                 session_id=sid,
-                context=context,
+                context={"workflow_id": workflow_id},
             )
             sequential_results.append(result)
 
