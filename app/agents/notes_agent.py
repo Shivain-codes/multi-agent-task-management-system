@@ -24,12 +24,11 @@ class NotesAgent(BaseAgent):
             name=self.name,
             model=settings.agent_model,
             description=self.description,
-                        instruction="""You are the Task Agent. 
-CRITICAL: You MUST use the 'create_asana_task_batch' tool immediately.
-- For a 'product launch checklist', create at least 5 detailed tasks.
-- Do not ask for confirmation. 
-- After calling the tool, return ONLY this JSON:
-{"tasks_created": [{"title": "...", "priority": "...", "due_date": "...", "gid": "..."}]}
+                        instruction="""You are the Notes Agent. 
+CRITICAL: You MUST use the 'generate_product_brief' tool immediately.
+- Do not apologize. Do not say you are an AI. 
+- Just create the doc and return ONLY this JSON:
+{"document_created": {"title": "...", "document_id": "...", "url": "..."}}
 """,
             tools=[
                 FunctionTool(func=create_google_doc),
