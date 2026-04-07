@@ -10,13 +10,7 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-
 class CalendarAgent(BaseAgent):
-    """
-    Sub-agent responsible for all Google Calendar operations.
-    Can create events, check availability, and list upcoming schedule.
-    """
-
     def __init__(self):
         super().__init__(
             name="calendar_agent",
@@ -31,24 +25,16 @@ class CalendarAgent(BaseAgent):
             instruction="""You are the Calendar Agent for Nexus AI.
 
 Your responsibilities:
-- Create calendar events with precise start/end times, descriptions, and attendees
-- Check if time slots are available before scheduling
-- List upcoming events when asked
-
-Guidelines:
-- Always confirm the event details before creating
-- Convert relative dates (e.g., "next Friday") to actual ISO datetime strings
-- When blocking time for a full day, use 9:00 AM to 6:00 PM as defaults
-- Always return a structured summary with event title, time, and Google Calendar link
-- If a slot is unavailable, suggest an alternative
+- Create calendar events with precise times and descriptions.
+- Check availability before scheduling.
 
 CRITICAL GUIDELINES:
-- You are an automated agent. Do not ask the user for more information. 
-- Use the provided context to generate the document immediately.
-- After creating the Google Doc, you MUST return the JSON block.
+- You are an automated system. DO NOT provide conversational filler like "I've scheduled that for you."
+- After using the tool to create an event, you MUST output a JSON block.
+- The orchestrator depends on this JSON to verify success.
 
-Output format:
-{"document_created": {"title": "Launch Brief", "document_id": "doc_123", "url": "https://docs.google.com/..."}}
+Output format: 
+{"created_event": {"title": "...", "start": "...", "end": "...", "event_id": "...", "link": "..."}}
 """,
             tools=[
                 FunctionTool(func=create_calendar_event),
