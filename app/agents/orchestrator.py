@@ -295,41 +295,38 @@ class OrchestratorAgent:
             trace.plan = plan
             await db_session.flush()
 
-        # ── Step 3: Run parallel agents ───────────────────────────────────────
+        # ── Step 3: Update Parallel Loop ───
         parallel_agents = plan.get("parallel_agents", [])
         parallel_tasks = [
             self._run_sub_agent(
                 agent_name=name,
-                instruction=plan["agent_instructions"][name],
+                # COMBINE instructions and request into ONE string
+                instruction=f"{plan['agent_instructions'][name]}\n\nUser Request: {user_request}",
                 session_id=sid,
-                context={"workflow_id": workflow_id, "user_request": user_request},
+                context={"workflow_id": workflow_id},
             )
-            for name in parallel_agents
-            if name in plan["agent_instructions"]
+            for name in parallel_agents if name in plan["agent_instructions"]
         ]
 
         parallel_results: List[Dict[str, Any]] = []
         if parallel_tasks:
             parallel_results = await asyncio.gather(*parallel_tasks, return_exceptions=False)
 
-        # ── Step 4: Run sequential agents ───
+        # ── Step 4: Update Sequential Loop ───
         sequential_results: List[Dict[str, Any]] = []
         for agent_name in plan.get("sequential_agents", []):
-            if agent_name not in plan["agent_instructions"]:
-                continue
+            parallel_summary = "\n".join([f"- {r['agent_name']}: {r.get('summary')}" for r in parallel_results])
 
-            # Create a clean instruction string with the data included
-            parallel_summary = "\n".join(
-                [f"- {r['agent_name']}: {r.get('summary')}" for r in parallel_results]
-            )
-            task_instruction = (
-                f"The following actions were completed: {parallel_summary}. "
-                "Please notify the team now."
+            # COMBINE data into the instruction string
+            combined_instruction = (
+                f"{plan['agent_instructions'][agent_name]}\n\n"
+                f"Data to report: {parallel_summary}\n\n"
+                "Action: Send the Slack notification now."
             )
 
             result = await self._run_sub_agent(
                 agent_name=agent_name,
-                instruction=task_instruction,
+                instruction=combined_instruction,
                 session_id=sid,
                 context={"workflow_id": workflow_id},
             )
