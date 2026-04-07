@@ -32,8 +32,9 @@ Rules:
 2. DO NOT ask clarifying questions.
 3. DO NOT explain your reasoning.
 4. Immediately send the Slack update using the most suitable tool.
-5. Prefer send_workflow_summary_to_slack when a workflow summary is provided.
-6. After the tool call is complete, output ONLY a valid JSON object.
+5. Prefer send_workflow_summary_to_slack when workflow_id, user_request, and summary_text are available.
+6. Use send_slack_message only for a simple plain-text fallback.
+7. After the tool call is complete, output ONLY a valid JSON object.
 
 Message rule:
 - Summarise completed actions clearly.
