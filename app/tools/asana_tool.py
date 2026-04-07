@@ -14,6 +14,51 @@ def _get_asana_client():
     return asana.ApiClient(configuration)
 
 
+def _default_product_launch_tasks(launch_name: str = "Product Launch Checklist") -> List[Dict[str, Any]]:
+    return [
+        {
+            "title": "Finalize launch plan",
+            "description": f"{launch_name}: confirm scope, owners, and success criteria.",
+            "priority": "high",
+        },
+        {
+            "title": "Confirm feature readiness",
+            "description": f"{launch_name}: verify features are complete and approved.",
+            "priority": "high",
+        },
+        {
+            "title": "Run QA and bug bash",
+            "description": f"{launch_name}: complete final QA pass and fix critical issues.",
+            "priority": "high",
+        },
+        {
+            "title": "Prepare launch assets",
+            "description": f"{launch_name}: finalize copy, visuals, and collateral.",
+            "priority": "medium",
+        },
+        {
+            "title": "Review analytics and tracking",
+            "description": f"{launch_name}: validate dashboards, events, and metrics.",
+            "priority": "medium",
+        },
+        {
+            "title": "Brief support team",
+            "description": f"{launch_name}: share FAQ, messaging, and escalation path.",
+            "priority": "medium",
+        },
+        {
+            "title": "Schedule launch-day monitoring",
+            "description": f"{launch_name}: assign owners to monitor systems and issues.",
+            "priority": "high",
+        },
+        {
+            "title": "Publish launch announcement",
+            "description": f"{launch_name}: send final internal and external communications.",
+            "priority": "high",
+        },
+    ]
+
+
 async def create_asana_task(
     title: str,
     description: Optional[str] = None,
@@ -71,13 +116,30 @@ async def create_asana_task(
 
 
 async def create_asana_task_batch(
-    tasks: List[Dict[str, Any]],
+    tasks: Optional[List[Dict[str, Any]]] = None,
     project_gid: Optional[str] = None,
+    checklist_name: Optional[str] = None,
 ) -> Dict[str, Any]:
+    """
+    Create multiple Asana tasks at once.
+
+    If tasks is omitted or empty and the checklist name suggests a product launch,
+    create a default 8-task product launch checklist automatically.
+    """
     created = []
     failed = []
 
-    if not tasks:
+    normalized_tasks = tasks or []
+
+    inferred_name = (checklist_name or "").strip()
+    lower_name = inferred_name.lower()
+
+    if not normalized_tasks and any(k in lower_name for k in ["launch", "product launch", "launch checklist"]):
+        normalized_tasks = _default_product_launch_tasks(
+            launch_name=inferred_name or "Product Launch Checklist"
+        )
+
+    if not normalized_tasks:
         return {
             "success": False,
             "created_count": 0,
@@ -86,7 +148,7 @@ async def create_asana_task_batch(
             "errors": [{"error": "No tasks were provided to create_asana_task_batch"}],
         }
 
-    for task_data in tasks:
+    for task_data in normalized_tasks:
         result = await create_asana_task(
             title=task_data.get("title", "Untitled Task"),
             description=task_data.get("description"),
@@ -107,6 +169,7 @@ async def create_asana_task_batch(
         "failed_count": len(failed),
         "tasks": created,
         "errors": failed,
+        "checklist_name": inferred_name or None,
     }
 
 
