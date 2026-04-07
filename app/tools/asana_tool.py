@@ -123,20 +123,19 @@ async def create_asana_task_batch(
     """
     Create multiple Asana tasks at once.
 
-    If tasks is omitted or empty and the checklist name suggests a product launch,
-    create a default 8-task product launch checklist automatically.
+    If tasks is empty but checklist_name suggests a launch checklist,
+    generate the default 8 launch tasks automatically.
     """
     created = []
     failed = []
 
     normalized_tasks = tasks or []
-
     inferred_name = (checklist_name or "").strip()
     lower_name = inferred_name.lower()
 
     if not normalized_tasks and any(k in lower_name for k in ["launch", "product launch", "launch checklist"]):
         normalized_tasks = _default_product_launch_tasks(
-            launch_name=inferred_name or "Product Launch Checklist"
+            inferred_name or "Product Launch Checklist"
         )
 
     if not normalized_tasks:
