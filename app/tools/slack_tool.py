@@ -18,26 +18,27 @@ async def send_slack_message(
     blocks: Optional[List[Dict[str, Any]]] = None,
     thread_ts: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Send a message to a Slack channel with support for Block Kit and threading.
-    """
     try:
         client = _get_slack_client()
         target_channel = channel or settings.slack_default_channel
 
-        # API call with optional blocks and thread support
-        response = await client.chat_postMessage(
-            channel=target_channel,
-            text=message,
-            blocks=blocks,
-            thread_ts=thread_ts,
-        )
+        kwargs = {
+            "channel": target_channel,
+            "text": message,
+        }
+        if blocks:
+            kwargs["blocks"] = blocks
+        if thread_ts:
+            kwargs["thread_ts"] = thread_ts
+
+        response = await client.chat_postMessage(**kwargs)
 
         logger.info("slack_message_sent", channel=target_channel, ts=response["ts"])
         return {
             "success": True,
             "ts": response["ts"],
             "channel": response["channel"],
+            "message_preview": message[:200],
         }
     except SlackApiError as e:
         logger.error("slack_message_failed", error=str(e.response["error"]))
@@ -50,12 +51,9 @@ async def send_slack_message(
 async def send_workflow_summary_to_slack(
     workflow_id: str,
     user_request: str,
-    results: Dict[str, Any],
+    summary_text: str,
     channel: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Constructs a rich Block Kit UI and sends it via send_slack_message.
-    """
     blocks = [
         {
             "type": "header",
@@ -69,41 +67,14 @@ async def send_workflow_summary_to_slack(
             },
         },
         {"type": "divider"},
-    ]
-
-    agent_icons = {
-        "calendar_agent": "📅",
-        "task_agent": "✅",
-        "notes_agent": "📝",
-        "notification_agent": "🔔",
-        "memory_agent": "🧠",
-    }
-
-    for agent_name, agent_result in results.get("agent_results", {}).items():
-        icon = agent_icons.get(agent_name, "🤖")
-        status = "Success" if agent_result.get("success") else "Failed"
-        summary = agent_result.get("summary", "No summary")
-        blocks.append(
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"{icon} *{agent_name.replace('_', ' ').title()}* — {status}\n{summary}",
-                },
-            }
-        )
-
-    blocks.append(
         {
-            "type": "context",
-            "elements": [
-                {
-                    "type": "mrkdwn",
-                    "text": f"Completed in {results.get('duration_ms', 0)}ms • {len(results.get('agent_results', {}))} agents",
-                }
-            ],
-        }
-    )
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": summary_text,
+            },
+        },
+    ]
 
     return await send_slack_message(
         message=f"Nexus AI workflow completed: {user_request}",
