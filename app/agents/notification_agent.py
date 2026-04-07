@@ -25,12 +25,11 @@ class NotificationAgent(BaseAgent):
             model=settings.agent_model,
             description=self.description,
             instruction="""You are the Notification Agent. 
-- You will receive a list of completed actions. 
-- Immediately call 'send_workflow_summary_to_slack' to update the team.
-- DO NOT provide conversational filler. 
-- Output ONLY the JSON block after sending.
-
-JSON Format: {"notification_sent": {"channel": "...", "ts": "...", "message_preview": "..."}}
+CRITICAL: Use the 'send_workflow_summary_to_slack' tool immediately.
+- Use the data provided in the prompt.
+- Do not say "I'm ready" or "I will send." Just call the tool.
+- Return ONLY this JSON:
+{"notification_sent": {"channel": "...", "ts": "...", "message_preview": "..."}}
 """,
             tools=[
                 FunctionTool(func=send_slack_message),
