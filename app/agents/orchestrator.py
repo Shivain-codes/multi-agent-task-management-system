@@ -137,6 +137,7 @@ class OrchestratorAgent:
         context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Run a single sub-agent and return its result with timing."""
+
         agent = self._sub_agents.get(agent_name)
         if not agent:
             return {
@@ -146,21 +147,52 @@ class OrchestratorAgent:
                 "summary": "Agent not found",
             }
 
-        start = time.monotonic()
-        result = await agent.run(
-            user_message=instruction,
-            session_id=session_id,
-            context=context,
-        )
-        duration_ms = int((time.monotonic() - start) * 1000)
+        # IMPORTANT:
+        # Give every sub-agent invocation its own isolated ADK session.
+        # Reusing the same session across parallel tool-calling agents causes
+        # model/functionCall/functionResponse turns to mix together.
+        sub_session_id = f"{session_id}:{agent_name}:{uuid.uuid4().hex}"
 
-        # Extract JSON summary from agent response if present
+        start = time.monotonic()
+
+        safe_context = {
+            "workflow_id": (context or {}).get("workflow_id"),
+            "parent_session_id": session_id,
+            "sub_session_id": sub_session_id,
+            "agent_name": agent_name,
+        }
+
+        try:
+            result = await agent.run(
+                user_message=instruction,
+                session_id=sub_session_id,
+                context=safe_context,
+            )
+        except Exception as e:
+            logger.exception(
+                "sub_agent_run_failed",
+                agent_name=agent_name,
+                workflow_id=safe_context.get("workflow_id"),
+                parent_session_id=session_id,
+                sub_session_id=sub_session_id,
+                error=str(e),
+            )
+            result = {
+                "success": False,
+                "agent_name": agent_name,
+                "error": str(e),
+                "response": "",
+            }
+
+        duration_ms = int((time.monotonic() - start) * 1000)
         summary = self._extract_summary(result.get("response", ""), agent_name)
 
         return {
             **result,
+            "agent_name": agent_name,
             "duration_ms": duration_ms,
             "summary": summary,
+            "session_id": sub_session_id,
         }
 
     def _extract_summary(self, response: str, agent_name: str) -> str:
@@ -295,33 +327,65 @@ class OrchestratorAgent:
             trace.plan = plan
             await db_session.flush()
 
-        # ── Step 3: Update Parallel Loop ───
+        # ── Step 3: Run parallel agents with isolated sessions ───────────────
         parallel_agents = plan.get("parallel_agents", [])
-        parallel_tasks = [
-            self._run_sub_agent(
-                agent_name=name,
-                # COMBINE instructions and request into ONE string
-                instruction=f"{plan['agent_instructions'][name]}\n\nUser Request: {user_request}",
-                session_id=sid,
-                context={"workflow_id": workflow_id},
+        parallel_tasks = []
+
+        for name in parallel_agents:
+            if name not in plan["agent_instructions"]:
+                continue
+
+            combined_instruction = (
+                f"{plan['agent_instructions'][name]}\n\n"
+                f"User Request: {user_request}\n\n"
+                "Important execution rules:\n"
+                "- Do not greet.\n"
+                "- Do not ask follow-up questions.\n"
+                "- Call the appropriate tool immediately.\n"
+                "- After tool execution, return ONLY the final JSON confirmation."
             )
-            for name in parallel_agents if name in plan["agent_instructions"]
-        ]
+
+            parallel_tasks.append(
+                self._run_sub_agent(
+                    agent_name=name,
+                    instruction=combined_instruction,
+                    session_id=sid,
+                    context={"workflow_id": workflow_id},
+                )
+            )
 
         parallel_results: List[Dict[str, Any]] = []
         if parallel_tasks:
             parallel_results = await asyncio.gather(*parallel_tasks, return_exceptions=False)
 
-        # ── Step 4: Update Sequential Loop ───
+        # ── Step 4: Run sequential agents after parallel phase ───────────────
         sequential_results: List[Dict[str, Any]] = []
-        for agent_name in plan.get("sequential_agents", []):
-            parallel_summary = "\n".join([f"- {r['agent_name']}: {r.get('summary')}" for r in parallel_results])
 
-            # COMBINE data into the instruction string
+        for agent_name in plan.get("sequential_agents", []):
+            successful_parallel = [r for r in parallel_results if r.get("success")]
+            failed_parallel = [r for r in parallel_results if not r.get("success")]
+
+            success_lines = [
+                f"- {r['agent_name']}: {r.get('summary', 'completed')}"
+                for r in successful_parallel
+            ]
+            failure_lines = [
+                f"- {r['agent_name']}: {r.get('error', 'failed')}"
+                for r in failed_parallel
+            ]
+
             combined_instruction = (
                 f"{plan['agent_instructions'][agent_name]}\n\n"
-                f"Data to report: {parallel_summary}\n\n"
-                "Action: Send the Slack notification now."
+                f"Original User Request: {user_request}\n\n"
+                "Completed actions:\n"
+                f"{chr(10).join(success_lines) if success_lines else '- None'}\n\n"
+                "Failed actions:\n"
+                f"{chr(10).join(failure_lines) if failure_lines else '- None'}\n\n"
+                "Important execution rules:\n"
+                "- Do not greet.\n"
+                "- Do not ask follow-up questions.\n"
+                "- Call the Slack tool immediately.\n"
+                "- Return ONLY the final JSON confirmation."
             )
 
             result = await self._run_sub_agent(
