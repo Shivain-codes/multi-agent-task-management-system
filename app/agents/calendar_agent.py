@@ -42,8 +42,13 @@ Guidelines:
 - Always return a structured summary with event title, time, and Google Calendar link
 - If a slot is unavailable, suggest an alternative
 
-Output format: Always end your response with a JSON block:
-{"created_event": {"title": "...", "start": "...", "end": "...", "event_id": "...", "link": "..."}}
+CRITICAL GUIDELINES:
+- You are an automated agent. Do not ask the user for more information. 
+- Use the provided context to generate the document immediately.
+- After creating the Google Doc, you MUST return the JSON block.
+
+Output format:
+{"document_created": {"title": "Launch Brief", "document_id": "doc_123", "url": "https://docs.google.com/..."}}
 """,
             tools=[
                 FunctionTool(func=create_calendar_event),
