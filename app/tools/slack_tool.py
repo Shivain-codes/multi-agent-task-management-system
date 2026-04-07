@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict, Any, List
+from typing import Optional, List, Dict, Any
 from slack_sdk.web.async_client import AsyncWebClient
 from slack_sdk.errors import SlackApiError
 from app.core.config import get_settings
@@ -13,29 +13,24 @@ def _get_slack_client() -> AsyncWebClient:
 
 
 async def send_slack_message(
-    async def send_slack_message(
     message: str,
     channel: Optional[str] = None,
+    blocks: Optional[List[Dict[str, Any]]] = None,
+    thread_ts: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Send a message to a Slack channel.
-
-    Args:
-        message: Plain text fallback message
-        channel: Slack channel name or ID (e.g. '#general' or 'C12345')
-        blocks: Optional Slack Block Kit blocks for rich formatting
-        thread_ts: Optional thread timestamp to reply in a thread
-
-    Returns:
-        dict with ts (message timestamp), channel, and status
+    Send a message to a Slack channel with support for Block Kit and threading.
     """
     try:
         client = _get_slack_client()
         target_channel = channel or settings.slack_default_channel
 
-       response = await client.chat_postMessage(
+        # API call with optional blocks and thread support
+        response = await client.chat_postMessage(
             channel=target_channel,
             text=message,
+            blocks=blocks,
+            thread_ts=thread_ts,
         )
 
         logger.info("slack_message_sent", channel=target_channel, ts=response["ts"])
@@ -59,16 +54,7 @@ async def send_workflow_summary_to_slack(
     channel: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Send a rich Slack summary of a completed workflow using Block Kit.
-
-    Args:
-        workflow_id: The workflow trace ID
-        user_request: Original user request
-        results: Aggregated results from all agents
-        channel: Target channel
-
-    Returns:
-        Slack send result
+    Constructs a rich Block Kit UI and sends it via send_slack_message.
     """
     blocks = [
         {
@@ -85,7 +71,6 @@ async def send_workflow_summary_to_slack(
         {"type": "divider"},
     ]
 
-    # Add per-agent result sections
     agent_icons = {
         "calendar_agent": "📅",
         "task_agent": "✅",
