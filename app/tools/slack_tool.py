@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, List
 from slack_sdk.web.async_client import AsyncWebClient
 from slack_sdk.errors import SlackApiError
 from app.core.config import get_settings
@@ -13,10 +13,9 @@ def _get_slack_client() -> AsyncWebClient:
 
 
 async def send_slack_message(
+    async def send_slack_message(
     message: str,
     channel: Optional[str] = None,
-    blocks: Optional[List[Dict]] = None,
-    thread_ts: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Send a message to a Slack channel.
@@ -34,16 +33,10 @@ async def send_slack_message(
         client = _get_slack_client()
         target_channel = channel or settings.slack_default_channel
 
-        kwargs = {
-            "channel": target_channel,
-            "text": message,
-        }
-        if blocks:
-            kwargs["blocks"] = blocks
-        if thread_ts:
-            kwargs["thread_ts"] = thread_ts
-
-        response = await client.chat_postMessage(**kwargs)
+       response = await client.chat_postMessage(
+            channel=target_channel,
+            text=message,
+        )
 
         logger.info("slack_message_sent", channel=target_channel, ts=response["ts"])
         return {
