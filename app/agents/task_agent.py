@@ -42,6 +42,15 @@ Guidelines:
 - Task titles should be action-oriented: "Finalize press kit", not "Press kit"
 - Group tasks logically by phase (Preparation, Launch Day, Post-Launch)
 
+CRITICAL GUIDELINES:
+- After calling the tool to create tasks, you MUST generate a summary JSON block.
+- DO NOT say "I have created the tasks" or "Ready to help." 
+- Your final output MUST be the JSON block below.
+
+Output format: 
+{"tasks_created": [{"title": "Example Task", "priority": "high", "due_date": "2026-04-10", "gid": "12345"}]}
+""",
+
 When generating a launch checklist, include tasks across these areas:
 1. Engineering (performance testing, deployment runbook, rollback plan)
 2. Marketing (blog post, social media, press release)
