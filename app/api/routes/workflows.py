@@ -18,8 +18,13 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 router = APIRouter(prefix="/workflows", tags=["Workflows"])
 
-# Single orchestrator instance (sub-agents are cached inside it)
-_orchestrator = OrchestratorAgent()
+
+def get_orchestrator() -> OrchestratorAgent:
+    """
+    Lazily create the orchestrator at request time instead of import time.
+    This avoids Cloud Run startup failures caused by deep import chains.
+    """
+    return OrchestratorAgent()
 
 
 @router.post("/run", response_model=WorkflowResponse, summary="Run a multi-agent workflow")
@@ -29,21 +34,11 @@ async def run_workflow(
 ):
     """
     Execute a natural language request through the full Nexus multi-agent system.
-
-    The orchestrator will:
-    - Decompose your request into a DAG of sub-tasks
-    - Run Calendar, Task, Notes agents in parallel
-    - Run the Notification agent after parallel phase completes
-    - Return a full execution trace with per-agent results
-
-    **Example request:**
-    ```
-    I have a product launch next Friday. Block my calendar for the launch day,
-    create a launch checklist, write a team brief, and notify the team on Slack.
-    ```
     """
     try:
-        result = await _orchestrator.run(
+        orchestrator = get_orchestrator()
+
+        result = await orchestrator.run(
             user_request=body.request,
             session_id=body.session_id,
             db_session=db,
@@ -74,12 +69,6 @@ async def get_workflow_trace(
     workflow_id: UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Retrieve the complete execution trace for a workflow.
-
-    Shows the orchestrator's plan, per-agent steps, timing, and final results.
-    This is the key observability endpoint — Google evaluators will love this.
-    """
     result = await db.execute(
         select(WorkflowTrace).where(WorkflowTrace.id == workflow_id)
     )
@@ -97,7 +86,6 @@ async def list_workflows(
     session_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """List recent workflow executions, optionally filtered by session."""
     query = select(WorkflowTrace).order_by(WorkflowTrace.created_at.desc()).limit(limit)
     if session_id:
         query = query.where(WorkflowTrace.session_id == session_id)
