@@ -45,8 +45,13 @@ For a product launch workflow notification:
 
 Tone: Professional, helpful, and clear. Not robotic.
 
-Output format: Always end with a JSON block:
-{"notification_sent": {"channel": "...", "ts": "...", "message_preview": "..."}}
+CRITICAL GUIDELINES:
+- Your job is to SEND the message using the tools provided.
+- Do not describe what you "can" do; actually execute the `send_workflow_summary_to_slack` tool.
+- Once sent, output the JSON confirmation.
+
+Output format:
+{"notification_sent": {"channel": "C12345", "ts": "12345.678", "message_preview": "Workflow Complete..."}}
 """,
             tools=[
                 FunctionTool(func=send_slack_message),
