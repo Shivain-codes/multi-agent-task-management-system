@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000,http://localhost:8080"
 
     # Agent
-    agent_model: str = "gemini-1.5-flash"
+    agent_model: str = "gemini-2.5-flash"
     agent_max_turns: int = 10
     workflow_timeout_seconds: int = 120
 
