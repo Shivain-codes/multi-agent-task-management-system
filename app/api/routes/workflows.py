@@ -3,11 +3,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID
-
 from app.api.schemas import (
     WorkflowRequest,
     WorkflowResponse,
-    WorkflowTraceResponse,
     AgentStepResult,
 )
 from app.agents.orchestrator import OrchestratorAgent
@@ -20,10 +18,6 @@ router = APIRouter(prefix="/workflows", tags=["Workflows"])
 
 
 def get_orchestrator() -> OrchestratorAgent:
-    """
-    Lazily create the orchestrator at request time instead of import time.
-    This avoids Cloud Run startup failures caused by deep import chains.
-    """
     return OrchestratorAgent()
 
 
@@ -32,18 +26,13 @@ async def run_workflow(
     body: WorkflowRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Execute a natural language request through the full Nexus multi-agent system.
-    """
     try:
         orchestrator = get_orchestrator()
-
         result = await orchestrator.run(
             user_request=body.request,
             session_id=body.session_id,
             db_session=db,
         )
-
         return WorkflowResponse(
             workflow_id=result["workflow_id"],
             session_id=result["session_id"],
@@ -54,17 +43,12 @@ async def run_workflow(
             agents_used=result["agents_used"],
             duration_ms=result["duration_ms"],
         )
-
     except Exception as e:
         logger.error("workflow_endpoint_failed", error=str(e))
         raise HTTPException(status_code=500, detail=f"Workflow execution failed: {str(e)}")
 
 
-@router.get(
-    "/{workflow_id}/trace",
-    response_model=WorkflowTraceResponse,
-    summary="Get full execution trace for a workflow",
-)
+@router.get("/{workflow_id}/trace", summary="Get full execution trace for a workflow")
 async def get_workflow_trace(
     workflow_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -77,7 +61,19 @@ async def get_workflow_trace(
     if not trace:
         raise HTTPException(status_code=404, detail=f"Workflow {workflow_id} not found")
 
-    return trace
+    # Manually serialize to avoid SQLAlchemy ORM serialization error
+    return {
+        "workflow_id": str(trace.id),
+        "session_id": trace.session_id,
+        "user_request": trace.user_request,
+        "status": str(trace.status.value) if hasattr(trace.status, "value") else str(trace.status),
+        "steps": trace.steps or [],
+        "error": trace.error,
+        "duration_ms": trace.duration_ms,
+        "agents_used": trace.agents_used or [],
+        "created_at": trace.created_at.isoformat() if trace.created_at else None,
+        "completed_at": trace.completed_at.isoformat() if trace.completed_at else None,
+    }
 
 
 @router.get("/", summary="List recent workflows")
@@ -89,16 +85,14 @@ async def list_workflows(
     query = select(WorkflowTrace).order_by(WorkflowTrace.created_at.desc()).limit(limit)
     if session_id:
         query = query.where(WorkflowTrace.session_id == session_id)
-
     result = await db.execute(query)
     traces = result.scalars().all()
-
     return {
         "workflows": [
             {
                 "workflow_id": str(t.id),
                 "user_request": t.user_request[:100],
-                "status": t.status,
+                "status": str(t.status.value) if hasattr(t.status, "value") else str(t.status),
                 "agents_used": t.agents_used,
                 "duration_ms": t.duration_ms,
                 "created_at": t.created_at.isoformat(),
