@@ -37,7 +37,7 @@ def create_app() -> FastAPI:
         description="""
 ## Multi-agent AI system for tasks, schedules, and information management
 
-Built on **Google ADK**, **Gemini**, and **AlloyDB** for the Google Gen AI Academy Hackathon.
+Built on **Google ADK**, **Gemini**, and **Cloud SQL** for the Google Gen AI Academy Hackathon.
 
 ### Key capabilities
 - **Natural language workflow execution** — one prompt orchestrates 4 agents in parallel
