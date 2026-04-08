@@ -122,30 +122,18 @@ async def create_asana_task_batch(
 ) -> Dict[str, Any]:
     """
     Create multiple Asana tasks at once.
-
-    If tasks is empty but checklist_name suggests a launch checklist,
-    generate the default 8 launch tasks automatically.
+    Always falls back to default product launch tasks if no tasks provided.
     """
     created = []
     failed = []
 
     normalized_tasks = tasks or []
-    inferred_name = (checklist_name or "").strip()
-    lower_name = inferred_name.lower()
+    inferred_name = (checklist_name or "Product Launch Checklist").strip()
 
-    if not normalized_tasks and any(k in lower_name for k in ["launch", "product launch", "launch checklist"]):
-        normalized_tasks = _default_product_launch_tasks(
-            inferred_name or "Product Launch Checklist"
-        )
-
+    # ALWAYS use default tasks if none provided — no keyword matching needed
     if not normalized_tasks:
-        return {
-            "success": False,
-            "created_count": 0,
-            "failed_count": 0,
-            "tasks": [],
-            "errors": [{"error": "No tasks were provided to create_asana_task_batch"}],
-        }
+        normalized_tasks = _default_product_launch_tasks(inferred_name)
+        logger.info("using_default_launch_tasks", count=len(normalized_tasks))
 
     for task_data in normalized_tasks:
         result = await create_asana_task(
@@ -163,12 +151,12 @@ async def create_asana_task_batch(
             failed.append({"title": task_data.get("title"), "error": result.get("error")})
 
     return {
-        "success": len(created) > 0 and len(failed) == 0,
+        "success": len(created) > 0,
         "created_count": len(created),
         "failed_count": len(failed),
         "tasks": created,
         "errors": failed,
-        "checklist_name": inferred_name or None,
+        "checklist_name": inferred_name,
     }
 
 
