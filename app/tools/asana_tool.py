@@ -14,7 +14,24 @@ def _get_asana_client():
     return asana.ApiClient(configuration)
 
 
-def _default_product_launch_tasks(launch_name: str = "Product Launch Checklist") -> List[Dict[str, Any]]:
+def _asana_config_error(project_gid: Optional[str] = None) -> Optional[str]:
+    missing = []
+    if not settings.asana_access_token:
+        missing.append("ASANA_ACCESS_TOKEN")
+    if not settings.asana_workspace_gid:
+        missing.append("ASANA_WORKSPACE_GID")
+    if not (project_gid or settings.asana_default_project_gid):
+        missing.append("ASANA_DEFAULT_PROJECT_GID")
+
+    if not missing:
+        return None
+
+    return "Asana is not configured. Set " + ", ".join(missing) + "."
+
+
+def _default_product_launch_tasks(
+    launch_name: str = "Product Launch Checklist",
+) -> List[Dict[str, Any]]:
     return [
         {
             "title": "Finalize launch plan",
@@ -69,6 +86,10 @@ async def create_asana_task(
     project_gid: Optional[str] = None,
 ) -> Dict[str, Any]:
     try:
+        config_error = _asana_config_error(project_gid)
+        if config_error:
+            return {"success": False, "error": config_error, "title": title}
+
         client = _get_asana_client()
         tasks_api = asana.TasksApi(client)
 
@@ -120,9 +141,9 @@ async def create_asana_task_batch(
     project_gid: Optional[str] = None,
     checklist_name: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Create multiple Asana tasks at once.
-    Always falls back to default product launch tasks if no tasks provided.
+    """Create multiple Asana tasks at once.
+
+    Falls back to a default product launch checklist when tasks are not provided.
     """
     created = []
     failed = []
@@ -130,7 +151,6 @@ async def create_asana_task_batch(
     normalized_tasks = tasks or []
     inferred_name = (checklist_name or "Product Launch Checklist").strip()
 
-    # ALWAYS use default tasks if none provided — no keyword matching needed
     if not normalized_tasks:
         normalized_tasks = _default_product_launch_tasks(inferred_name)
         logger.info("using_default_launch_tasks", count=len(normalized_tasks))
@@ -165,6 +185,10 @@ async def list_asana_tasks(
     completed: bool = False,
 ) -> Dict[str, Any]:
     try:
+        config_error = _asana_config_error(project_gid)
+        if config_error:
+            return {"success": False, "error": config_error, "tasks": []}
+
         client = _get_asana_client()
         tasks_api = asana.TasksApi(client)
 
