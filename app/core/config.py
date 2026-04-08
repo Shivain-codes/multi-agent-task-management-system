@@ -41,9 +41,10 @@ class Settings(BaseSettings):
     app_port: int = 8080
     log_level: str = "INFO"
     cors_origins: str = "http://localhost:3000,http://localhost:8080"
+    demo_mode: bool = False  # used by agents to skip real API calls
 
     # Agent
-    agent_model: str = "gemini-2.5-flash"
+    agent_model: str = "gemini-2.0-flash"
     agent_max_turns: int = 10
     workflow_timeout_seconds: int = 120
 
@@ -54,7 +55,6 @@ class Settings(BaseSettings):
         db_name = self.db_name
 
         if self.cloudsql_instance_connection_name:
-            # DO NOT encode the socket path — asyncpg needs it raw
             socket_path = f"{self.db_socket_dir}/{self.cloudsql_instance_connection_name}"
             return f"postgresql+asyncpg://{user}:{password}@/{db_name}?host={socket_path}"
 
