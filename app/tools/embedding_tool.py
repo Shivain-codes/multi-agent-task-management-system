@@ -8,19 +8,13 @@ settings = get_settings()
 
 genai.configure(api_key=settings.gemini_api_key)
 
-EMBEDDING_MODEL = "models/embedding-001"
+EMBEDDING_MODEL = "models/text-embedding-004"  # Updated from embedding-001
 EMBEDDING_DIM = 768
 
 
 async def generate_embedding(text: str) -> Optional[List[float]]:
     """
     Generate a 768-dim embedding vector for the given text using Gemini.
-
-    Args:
-        text: Input text to embed
-
-    Returns:
-        List of floats (768 dimensions), or None on failure
     """
     try:
         result = genai.embed_content(
@@ -37,12 +31,6 @@ async def generate_embedding(text: str) -> Optional[List[float]]:
 async def generate_query_embedding(query: str) -> Optional[List[float]]:
     """
     Generate a query-optimized embedding for semantic search.
-
-    Args:
-        query: Search query string
-
-    Returns:
-        List of floats, or None on failure
     """
     try:
         result = genai.embed_content(
